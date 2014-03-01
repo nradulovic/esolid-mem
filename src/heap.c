@@ -51,8 +51,8 @@ struct PORT_C_ALIGN(ES_CPU_DEF_DATA_ALIGNMENT) heapMemBlock {
         esRamSSize            size;
     }                   phy;
     struct heapFree {
-        struct heapMemBlock * prev;
         struct heapMemBlock * next;
+        struct heapMemBlock * prev;
     }                   free;
 };
 
@@ -139,23 +139,27 @@ esError esHeapMemAllocI(
                 (size + sizeof(struct heapMemBlock [1]))) {
                 struct heapMemBlock * tmp;
 
-                tmp = (struct heapMemBlock *)((uint8_t *)curr + size + sizeof(struct heapPhy [1]));
-                tmp->free.next = curr->free.next;
+                *mem = (void *)(&curr->free);
+                tmp = (struct heapMemBlock *)
+                    ((uint8_t *)curr + size + sizeof(struct heapPhy [1]));      /* Create smaller free block                                */
+                tmp->phy.prev  = curr;                                          /* Point back to the current block                          */
+                tmp->phy.size  =
+                    curr->phy.size - (esRamSSize)size - (esRamSSize)sizeof(struct heapPhy [1]);
+                curr->phy.size = (esRamSSize)size * (-1);                       /* Mark block as allocated                                  */
+                tmp->free.next = curr->free.next;                               /* Remove current and add smaller free block to free list   */
                 tmp->free.prev = curr->free.prev;
                 tmp->free.next->free.prev = tmp;
                 tmp->free.prev->free.next = tmp;
-                tmp->phy.size  = (esRamSSize)
-                    ((size_t)curr->phy.size - size - sizeof(struct heapPhy [1]));
-                tmp->phy.prev  = curr;
-                curr->phy.size = (esRamSSize)(size * (-1));           /* Mark block as allocated                                  */
-                *mem = (void *)(&curr->free);
+                curr           = (struct heapMemBlock *)
+                    ((uint8_t *)tmp + tmp->phy.size + sizeof(struct heapPhy [1]));
+                curr->phy.prev = tmp;                                           /* Point to the newly created block                         */
 
                 return (ES_ERROR_NONE);
             } else {
-                curr->free.next->free.prev = curr->free.prev;
+                *mem = (void *)(&curr->free);
+                curr->free.next->free.prev = curr->free.prev;                   /* Remove current block from free list                      */
                 curr->free.prev->free.next = curr->free.next;
                 curr->phy.size = (esRamSSize)(curr->phy.size * (-1));           /* Mark block as allocated                                  */
-                *mem = (void *)(&curr->free);
 
                 return (ES_ERROR_NONE);
             }
@@ -195,30 +199,32 @@ esError esHeapMemFreeI(
     ES_REQUIRE(ES_API_OBJECT,  heapMem->signature == HEAP_MEM_SIGNATURE);
     ES_REQUIRE(ES_API_POINTER, mem != NULL);
 
-    curr = (struct heapMemBlock *)
+    curr           = (struct heapMemBlock *)
         ((uint8_t *)mem - offsetof(struct heapMemBlock, free));
-    curr->phy.size = (esRamSSize)(curr->phy.size * (-1));                       /* UnMark block as allocated                                */
-    tmp  = (struct heapMemBlock *)((uint8_t *)curr + curr->phy.size + sizeof(struct heapPhy [1]));
+    curr->phy.size = (esRamSSize)curr->phy.size * (-1);                         /* Mark block as free                                       */
+    tmp            = (struct heapMemBlock *)
+        ((uint8_t *)curr + curr->phy.size + sizeof(struct heapPhy [1]));
 
-    if ((curr->phy.prev->phy.size >= 0) && (tmp->phy.size < 0)) {               /* Previous block is free                                   */
-        curr->phy.prev->phy.size = (esRamSSize)
-            (curr->phy.prev->phy.size + curr->phy.size + sizeof(struct heapPhy [1]));
-        tmp->phy.prev = curr->phy.prev;
-    } else if ((curr->phy.prev->phy.size < 0) && (tmp->phy.size >= 0)) {        /* Next block is free                                     */
-        curr->free.next = tmp->free.next;
-        curr->free.prev = tmp->free.prev;
+    if ((curr->phy.prev->phy.size > 0) && (tmp->phy.size < 0)) {               /* Previous block is free                                   */
+        curr->phy.prev->phy.size +=
+            curr->phy.size + (esRamSSize)sizeof(struct heapPhy [1]);
+        tmp->phy.prev             = curr->phy.prev;
+    } else if ((curr->phy.prev->phy.size < 0) && (tmp->phy.size > 0)) {        /* Next block is free                                       */
+        curr->free.next            = tmp->free.next;
+        curr->free.prev            = tmp->free.prev;
         curr->free.prev->free.next = curr;
         curr->free.next->free.prev = curr;
-        curr->phy.size  = (esRamSSize)(curr->phy.size + tmp->phy.size + sizeof(struct heapPhy [1]));
-        tmp = (struct heapMemBlock *)((uint8_t *)curr + curr->phy.size);
-        tmp->phy.prev = curr;
-    } else if ((curr->phy.prev->phy.size >= 0) && (tmp->phy.size >= 0)) {       /* Previous and next blocks are free                      */
+        curr->phy.size += tmp->phy.size + (esRamSSize)sizeof(struct heapPhy [1]);
+        tmp = (struct heapMemBlock *)
+            ((uint8_t *)curr + curr->phy.size + sizeof(struct heapPhy [1]));
+        tmp->phy.prev   = curr;
+    } else if ((curr->phy.prev->phy.size > 0) && (tmp->phy.size > 0)) {       /* Previous and next blocks are free                        */
         tmp->free.prev->free.next = tmp->free.next;
         tmp->free.next->free.prev = tmp->free.prev;
-        curr->phy.prev->phy.size  = (esRamSSize)
-            (curr->phy.prev->phy.size + curr->phy.size + tmp->phy.size + sizeof(struct heapPhy [1]));
+        curr->phy.prev->phy.size +=
+            curr->phy.size + tmp->phy.size + (esRamSSize)sizeof(struct heapPhy [2]);
         tmp = (struct heapMemBlock *)
-            ((uint8_t *)curr->phy.prev + curr->phy.prev->phy.size);
+            ((uint8_t *)curr->phy.prev + curr->phy.prev->phy.size + sizeof(struct heapPhy [1]));
         tmp->phy.prev = curr->phy.prev;
     } else {                                                                    /* Previous and next blocks are allocated                   */
         curr->free.next = heapMem->sentinel->free.next;
