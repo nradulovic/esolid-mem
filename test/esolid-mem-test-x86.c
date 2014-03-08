@@ -33,26 +33,27 @@
 
 static int64_t buffer[19];
 
-int main(void) {
+int main(
+    void) {
 
-	esHeapMem myMem;
-	void *    alloc1;
-	void *    alloc2;
-	void *    alloc3;
+    esHeapMem myMem;
+    void *    alloc1;
+    void *    alloc2;
+    void *    alloc3;
 
-	esHeapMemInit(&myMem, buffer, sizeof(buffer));
-	/* prim condition */
-	esHeapMemAlloc(&myMem, 2*8, &alloc1);
-	esHeapMemAlloc(&myMem, 3*8, &alloc2);
-	/* sec condition */
-	esHeapMemAlloc(&myMem, 2*8, &alloc3);
+    esHeapMemInit(&myMem, buffer, sizeof(buffer));
+    /* prim condition */
+    esHeapMemAlloc(&myMem, 2*8, &alloc1);
+    esHeapMemAlloc(&myMem, 3*8, &alloc2);
+    /* sec condition */
+    esHeapMemAlloc(&myMem, 2*8, &alloc3);
 
-	/* prev = occ, next = occ */
-	esHeapMemFree(&myMem, alloc1);
+    /* prev = occ, next = occ */
+    esHeapMemFree(&myMem, alloc1);
 
-	/* prev = free, next = occ */
-	esHeapMemFree(&myMem, alloc2);
-	esHeapMemFree(&myMem, alloc3);
+    /* prev = free, next = occ */
+    esHeapMemFree(&myMem, alloc2);
+    esHeapMemFree(&myMem, alloc3);
 
 	/* prim condition */
     esHeapMemAlloc(&myMem, 2*8, &alloc1);
