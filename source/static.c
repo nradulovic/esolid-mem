@@ -30,112 +30,92 @@
 
 /*=========================================================  INCLUDE FILES  ==*/
 
-#include "plat/critical.h"
-#include "base/bitop.h"
-#include "mem/static.h"
+#include "plat/sys_lock.h"
+#include "base/nbitop.h"
+#include "mem/nstatic.h"
 
 /*=========================================================  LOCAL MACRO's  ==*/
 
 /**@brief       Signature for static memory manager
  */
-#define STATIC_MEM_SIGNATURE            ((esAtomic)0xDEADBEEDU)
+#define STATIC_MEM_SIGNATURE            ((ncpu_reg)0xdeadbee0u)
 
 /*======================================================  LOCAL DATA TYPES  ==*/
 /*=============================================  LOCAL FUNCTION PROTOTYPES  ==*/
 /*=======================================================  LOCAL VARIABLES  ==*/
 
-/**@brief       Module information
- */
-static const ES_MODULE_INFO_CREATE("StaticMem", "Static Memory management", "Nenad Radulovic");
+static const NMODULE_INFO_CREATE("Static Memory Management", "Nenad Radulovic");
 
 /*======================================================  GLOBAL VARIABLES  ==*/
 /*============================================  LOCAL FUNCTION DEFINITIONS  ==*/
 /*===================================  GLOBAL PRIVATE FUNCTION DEFINITIONS  ==*/
 /*====================================  GLOBAL PUBLIC FUNCTION DEFINITIONS  ==*/
 
-esError esStaticMemInit(
-    esStaticMem *       staticMem,
-    void *              storage,
-    size_t              storageSize) {
 
-    ES_REQUIRE(ES_API_POINTER, NULL != staticMem);
-    ES_REQUIRE(ES_API_POINTER, NULL != storage);
-    ES_REQUIRE(ES_API_RANGE, 0u != storageSize);
+void nstatic_init(
+    struct nstatic *            static_mem,
+    void *                      storage,
+    size_t                      size)
+{
+    NREQUIRE(NAPI_POINTER, static_mem != NULL);
+    NREQUIRE(NAPI_POINTER, storage != NULL);
+    NREQUIRE(NAPI_RANGE,   size > NCPU_DATA_ALIGNMENT);
 
-    staticMem->base = storage;
-    staticMem->size = (esRamSize)ES_ALIGN_UP(storageSize, ES_CPU_DEF_DATA_ALIGNMENT);
-    staticMem->free = staticMem->size;
+    static_mem->base = storage;
+    static_mem->size = NALIGN(size, NCPU_DATA_ALIGNMENT);
+    static_mem->free = static_mem->size;
 
-    ES_OBLIGATION(staticMem->signature = STATIC_MEM_SIGNATURE);
-
-    return (ES_ERROR_NONE);
+    NOBLIGATION(static_mem->signature = STATIC_MEM_SIGNATURE);
 }
 
-esError esStaticMemAllocI(
-    struct esStaticMem * staticMem,
-    size_t              size,
-    void **             mem) {
 
-    ES_REQUIRE(ES_API_POINTER, staticMem != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  staticMem->signature == STATIC_MEM_SIGNATURE);
-    ES_REQUIRE(ES_API_RANGE,   size != 0u);
-    ES_REQUIRE(ES_API_POINTER, mem != NULL);
 
-    size = ES_ALIGN_UP(size, ES_CPU_DEF_DATA_ALIGNMENT);
+void * nstatic_alloc_i(
+    struct nstatic *            static_mem,
+    size_t                      size)
+{
+    NREQUIRE(NAPI_POINTER, static_mem != NULL);
+    NREQUIRE(NAPI_POINTER, static_mem->signature == STATIC_MEM_SIGNATURE);
 
-    if (size <= staticMem->free) {
-        staticMem->free -= size;
-        *mem = (void *)&staticMem->base[staticMem->free];
+    size = NALIGN_UP(size, NCPU_DATA_ALIGNMENT);
 
-        return (ES_ERROR_NONE);
+    if (size <= static_mem->free) {
+        static_mem->free -= size;
+
+        return ((void *)&((uint8_t *)static_mem->base)[static_mem->free]);
+    } else {
+
+        return (NULL);
     }
-
-    return (ES_ERROR_NO_MEMORY);
 }
 
-esError esStaticMemAlloc(
-    esStaticMem *       staticMem,
-    size_t              size,
-    void **             mem) {
 
-    esError             error;
-    esIntrCtx           intrCtx;
 
-    ES_CRITICAL_LOCK_ENTER(&intrCtx);
-    error = esStaticMemAllocI(
-        staticMem,
-        size,
-        mem);
-    ES_CRITICAL_LOCK_EXIT(intrCtx);
+void * nstatic_alloc(
+    struct nstatic *            static_mem,
+    size_t                      size)
+{
+    nsys_lock                   sys_lock;
+    void *                      mem;
 
-    return (error);
+    nsys_lock_enter(&sys_lock);
+    mem = nstatic_alloc_i(static_mem, size);
+    nsys_lock_exit(&sys_lock);
+
+    return (mem);
 }
 
-esError esStaticMemGetFreeI(
-    esStaticMem *       staticMem,
-    size_t *            size) {
 
-    ES_REQUIRE(ES_API_POINTER, staticMem != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  staticMem->signature == STATIC_MEM_SIGNATURE);
-    ES_REQUIRE(ES_API_RANGE,   size != 0u);
 
-    *size = staticMem->free;
-
-    return (ES_ERROR_NONE);
+void nstatic_free_i(
+    struct nstatic *            static_mem,
+    void *                      mem)
+{
+    (void)static_mem;
+    (void)mem;
+    NASSERT_ALWAYS("Called free() for static memory.");
 }
 
-esError esStaticMemGetSizeI(
-    esStaticMem *       staticMem,
-    size_t *            size) {
-
-    ES_REQUIRE(ES_API_POINTER, staticMem != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  staticMem->signature == STATIC_MEM_SIGNATURE);
-    ES_REQUIRE(ES_API_RANGE,   size != 0u);
-
-    *size = staticMem->size;
-
-    return (ES_ERROR_NONE);
-}
 
 /*================================*//** @cond *//*==  CONFIGURATION ERRORS  ==*/
 /** @endcond *//** @} *//** @} *//*********************************************

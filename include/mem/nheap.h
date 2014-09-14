@@ -29,22 +29,17 @@
  * @brief       Heap memory API
  * @{ *//*--------------------------------------------------------------------*/
 
-#ifndef ES_HEAP_MEM_H_
-#define ES_HEAP_MEM_H_
+#ifndef NHEAP_H
+#define NHEAP_H
 
 /*=========================================================  INCLUDE FILES  ==*/
 
 #include <stddef.h>
 
 #include "plat/compiler.h"
-#include "base/debug.h"
-#include "base/error.h"
+#include "base/ndebug.h"
 
 /*===============================================================  MACRO's  ==*/
-
-#define ES_HEAP_ALLOC(size)
-#define ES_HEAP_FREE(mem)
-
 /*------------------------------------------------------  C++ extern begin  --*/
 #ifdef __cplusplus
 extern "C" {
@@ -52,140 +47,104 @@ extern "C" {
 
 /*============================================================  DATA TYPES  ==*/
 
-/**@brief       Dynamic memory instance handle structure
+/**@brief       Forward declation
+ * @notapi
+ */
+struct n_heap_block;
+
+/**@brief       Heap memory instance structure
  * @details     This structure holds information about dynamic memory instance.
- * @see         esHeapMemInit()
+ * @see         nheap_init()
  * @api
  */
-struct esHeapMem {
-    struct heapMemBlock * sentinel;                                             /**<@brief Pointer to the memory sentinel                   */
-    size_t              free;
-    size_t              size;
-#if (1U == CONFIG_API_VALIDATION) || defined(__DOXYGEN__)
-    esAtomic            signature;                                              /**<@brief Structure signature, used during development only*/
+struct nheap
+{
+    struct n_heap_block *       sentinel;           /**<@brief Heap sentinel  */
+    size_t                      free;
+    size_t                      size;
+#if (CONFIG_DEBUG_API == 1) || defined(__DOXYGEN__)
+    ncpu_reg                    signature;          /**<@brief Debug signature*/
 #endif
 };
 
-/**@brief       Dynamic memory instance handle type
+/**@brief       Heap memory instance type
  * @api
  */
-typedef struct esHeapMem esHeapMem;
+typedef struct nheap nheap;
 
 /*======================================================  GLOBAL VARIABLES  ==*/
 /*===================================================  FUNCTION PROTOTYPES  ==*/
 
-/**
- * @brief       Inicijalizuje dinamican memorijski alokator
- * @param       [out] handle            Deskriptor dinamickog alokatora
- * @param       [in] storage            Predefinisani memorijski prostor koji se
- *                                      predaje dinamickom alokatoru na
- *                                      koriscenje
- * @param       storageSize             Velicina memorijskog prostora u
- *                                      bajtovima
- * @details     Ova funkcija se mora pozvati pre koriscenja funkcija dinamickog
- *              memorijskog alokatora.
- * @warning     Funkcija zahteva da pokazivaci handle i pool budu poravnani
- *              (aligned). Ukoliko se koriste eSolid alokatori za instaciranje
- *              @c handle strukture i @c poolStorage onda je poravnani pristup
- *              osiguran.
- * @warning     Funkcija zahteva da velicina memorijskog prostora @c storageSize
- *              bude poravnana (aligned). Na primer za 32-bitni procesor
- *              (poravnanje 4 bajta): ako je @c storageSize == 313 onda je
- *              potrebno poravnati na sledecu vecu vrednost koja je deljiva sa 4,
- *              u ovom slucaju ce to biti 316.
+
+/**@brief       Initialize heap structure instance
+ * @param       heap
+ *              Pointer to heap structure instance, see @ref nheap.
+ * @param       storage
+ *              Pointer to reserved memory space. Usually this will be an array
+ *              of bytes which are statically alloacated.
+ * @param       Size of storage reserved memory in bytes.
+ * @details     This function must be called before @c heap structure can be
+ *              used by other functions.
  * @api
  */
-esError esHeapMemInit(
-    struct esHeapMem *  heapMem,
-    void *              storage,
-    size_t              storageSize);
+void nheap_init(
+    struct nheap *              heap,
+    void *                      storage,
+    size_t                      size);
 
-esError esHeapMemTerm(
-    struct esHeapMem *  heapMem);
 
-/**
- * @brief       Dodeljuje memorijski prostor velicine @c size
- * @param       [in] handle             Deskriptor dinamickog alokatora
- * @param       size                    Velicina zahtevanog memorijskog prostora
- *                                      u bajtovima.
- * @return      Pokazivac na rezervisani memorijski blok.
- * @details     U debug rezimu ova funkcija uvek vraca pokazivac, odnosno, ne
- *              moze se desiti da vrati NULL pokazivac, kao sto nalaze
- *              standardna implementacija @c malloc C funkcije. Ukoliko se
- *              zahtevana memorija ne moze dobaviti generisace se ASSERT greska.
- *              Kada se ne koristi debug rezim funkcija se ponasa u skladu sa
- *              standardom.
- * @iclass
- */
-esError esHeapMemAllocI(
-    struct esHeapMem *  heapMem,
-    size_t              size,
-    void **             mem);
 
-/**
- * @brief       Dodeljuje memorijski prostor velicine @c size
- * @param       [in] handle             Deskriptor dinamickog alokatora
- * @param       size                    Velicina zahtevanog memorijskog prostora
- *                                      u bajtovima.
- * @return      Pokazivac na rezervisani memorijski blok.
- * @details     U debug rezimu ova funkcija uvek vraca pokazivac, odnosno, ne
- *              moze se desiti da vrati NULL pokazivac, kao sto nalaze
- *              standardna implementacija @c malloc C funkcije. Ukoliko se
- *              zahtevana memorija ne moze dobaviti generisace se ASSERT greska.
- *              Kada se ne koristi debug rezim funkcija se ponasa u skladu sa
- *              standardom.
- * @note        Funkcija koristi makroe @ref ES_CRITICAL_LOCK_ENTER i
- *              @ref ES_CRITICAL_LOCK_EXIT za zastitu memorije od istovremenog
- *              pristupa.
+/**@brief       Terminate heap instance
+ * @param       heap
+ *              Pointer to heap structure instance
  * @api
  */
-esError esHeapMemAlloc(
-    struct esHeapMem *  heapMem,
-    size_t              size,
-    void **             mem);
+void nheap_term(
+    struct nheap *            heap);
 
-/**
- * @brief       Reciklira memorijski prostor na koji pokazije @c mem
- *              pokazivac
- * @param       [in] handle             Deskriptor dinamickog alokatora
- * @param       [in] mem                Pokazivac na prethodno dodeljen
- *                                      memorijski prostor.
- * @iclass
- */
-esError esHeapMemFreeI(
-    struct esHeapMem *  heapMem,
-    void *              mem);
 
-/**
- * @brief       Reciklira memorijski prostor na koji pokazije @c mem
- *              pokazivac
- * @param       [in] handle             Deskriptor dinamickog alokatora
- * @param       [in] mem                Pokazivac na prethodno dodeljen
- *                                      memorijski prostor.
- * @note        Funkcija koristi makroe @ref ES_CRITICAL_LOCK_ENTER i
- *              @ref ES_CRITICAL_LOCK_EXIT za zastitu memorije od istovremenog
- *              pristupa.
- * @api
- */
-esError esHeapMemFree(
-    struct esHeapMem *  heapMem,
-    void *              mem);
 
-esError esHeapGetSizeI(
-    struct esHeapMem *  heapMem,
-    size_t *            size);
+void * nheap_alloc_i(
+    struct nheap *              heap,
+    size_t                      size);
 
-esError esHeapGetSize(
-    struct esHeapMem *  heapMem,
-    size_t *            size);
 
-esError esHeapGetBlockSizeI(
-    struct esHeapMem *  heapMem,
-    size_t *            size);
 
-esError esHeapGetBlockSize(
-    struct esHeapMem *  heapMem,
-    size_t *            size);
+void * nheap_alloc(
+    struct nheap *              heap,
+    size_t                      size);
+
+
+
+void nheap_free_i(
+    struct nheap *              heap,
+    void *                      mem);
+
+
+
+void nheap_free(
+    struct nheap *              heap,
+    void *                      mem);
+
+
+
+size_t nheap_unoccupied_i(
+    const struct nheap *        heap);
+
+
+
+size_t nheap_unoccupied(
+    const struct nheap *        heap);
+
+
+
+size_t nheap_size_i(
+    const struct nheap *        heap);
+
+
+
+size_t nheap_size(
+    const struct nheap *        heap);
 
 /*--------------------------------------------------------  C++ extern end  --*/
 #ifdef __cplusplus
@@ -196,4 +155,4 @@ esError esHeapGetBlockSize(
 /** @endcond *//** @} *//** @} *//*********************************************
  * END of heap_mem.h
  ******************************************************************************/
-#endif /* ES_HEAP_MEM_H_ */
+#endif /* NHEAP_H */

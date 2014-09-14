@@ -29,22 +29,19 @@
  * @brief       Static Memory Management API
  * @{ *//*--------------------------------------------------------------------*/
 
-#ifndef ES_STATIC_MEM_
-#define ES_STATIC_MEM_
+#ifndef NSTATIC_H
+#define NSTATIC_H
 
 /*=========================================================  INCLUDE FILES  ==*/
 
 #include <stddef.h>
-#include <stdint.h>
 
 #include "plat/compiler.h"
-#include "family/profile.h"
-#include "base/debug.h"
-#include "base/error.h"
+#include "base/ndebug.h"
 
 /*===============================================================  MACRO's  ==*/
 
-/*------------------------------------------------------  C++ extern base  --*/
+/*-------------------------------------------------------  C++ extern base  --*/
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -55,72 +52,96 @@ extern "C" {
  * @details     This structure holds information about static memory instance.
  * @api
  */
-struct esStaticMem {
-    uint8_t *           base;                                                   /**<@brief Pointer to the base of static memory        */
-    size_t              free;                                                   /**<@brief Current index of managed memory                  */
-    size_t              size;                                                   /**<@brief The size of static memory                        */
-#if (1U == CONFIG_API_VALIDATION) || defined(__DOXYGEN__)
-    esAtomic            signature;                                              /**<@brief Structure signature, used during development only*/
+struct nstatic
+{
+    void *                      base;               /**<@brief Base address   */
+    size_t                      free;               /**<@brief Free bytes     */
+    size_t                      size;               /**<@brief Size of memory */
+#if (CONFIG_DEBUG_API == 1) || defined(__DOXYGEN__)
+    ncpu_reg                    signature;          /**<@brief Debug signature*/
 #endif
 };
 
 /**@brief       Static memory instance handle type
  * @api
  */
-typedef struct esStaticMem esStaticMem;
+typedef struct nstatic nstatic;
 
 /*======================================================  GLOBAL VARIABLES  ==*/
 /*===================================================  FUNCTION PROTOTYPES  ==*/
 
+
 /**@brief       Initializes static memory instance
- * @param       handle
- *              Pointer to handle type variable, see @ref esStaticMem.
+ * @param       static_mem
+ *              Pointer to handle type variable, see @ref nstatic.
  * @param       storage
  *              Storage memory reserved for static memory manager.
- * @param       storageSize
+ * @param       size
  *              Size of reserved memory expresses in bytes.
  * @details     This function shall be called before any other static memory
  *              management function.
  * @api
  */
-esError esStaticMemInit(
-    struct esStaticMem * staticMem,
-    void *              storage,
-    size_t              storageSize);
+void nstatic_init(
+    struct nstatic *            static_mem,
+    void *                      storage,
+    size_t                      size);
 
-/**@brief       Allocates static memory of size @c size
- * @param       handle
- *              Pointer to static memory instance, see @ref esStaticMem.
+
+
+/**@brief       Allocates static memory of get_size @c get_size
+ * @param       static_mem
+ *              Pointer to static memory instance, see @ref nstatic.
  * @param       size
  *              The size of requested memory in bytes.
- * @return      Pointer to free memory of requested size.
+ * @return      Pointer to free memory of requested get_size.
  * @iclass
  */
-esError esStaticMemAllocI(
-    struct esStaticMem * staticMem,
-    size_t              size,
-    void **             mem);
+void * nstatic_alloc_i(
+    struct nstatic *            static_mem,
+    size_t                      size);
 
-/**@brief       Allocates static memory of size @c size
- * @param       handle
- *              Pointer to static memory instance, see @ref esStaticMem.
+
+
+/**@brief       Allocates static memory of get_size @c get_size
+ * @param       static_mem
+ *              Pointer to static memory instance, see @ref nstatic.
  * @param       size
  *              The size of requested memory in bytes.
- * @return      Pointer to free memory of requested size.
+ * @return      Pointer to free memory of requested get_size.
  * @api
  */
-esError esStaticMemAlloc(
-    struct esStaticMem * staticMem,
-    size_t              size,
-    void **             mem);
+void * nstatic_alloc(
+    struct nstatic *            static_mem,
+    size_t                      size);
 
-esError esStaticMemGetFreeI(
-    struct esStaticMem * staticMem,
-    size_t *            size);
 
-esError esStaticMemGetSizeI(
-    esStaticMem *       staticMem,
-    size_t *            size);
+
+void nstatic_free_i(
+    struct nstatic *            static_mem,
+    void *                      mem);
+
+
+
+#define nstatic_free                        nstatic_free_i
+
+
+
+PORT_C_INLINE
+size_t nstatic_unoccupied_i(
+    const struct nstatic *      static_mem)
+{
+    return (static_mem->free);
+}
+
+
+
+PORT_C_INLINE
+size_t nstatic_size_i(
+    const struct nstatic *      static_mem)
+{
+    return (static_mem->size);
+}
 
 /*--------------------------------------------------------  C++ extern end  --*/
 #ifdef __cplusplus
@@ -129,6 +150,6 @@ esError esStaticMemGetSizeI(
 
 /*================================*//** @cond *//*==  CONFIGURATION ERRORS  ==*/
 /** @endcond *//** @} *//** @} *//*********************************************
- * END of static_mem.h
+ * END of static.h
  ******************************************************************************/
-#endif /* ES_STATIC_MEM_ */
+#endif /* NSTATIC_H */

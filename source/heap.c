@@ -1,5 +1,5 @@
 /*
- * This file is part of eSolid.
+ * This file is part of Embedded Solid.
  *
  * Copyright (C) 2010 - 2013 Nenad Radulovic
  *
@@ -30,320 +30,296 @@
 
 /*=========================================================  INCLUDE FILES  ==*/
 
-#include "plat/critical.h"
-#include "family/profile.h"
-#include "base/bitop.h"
-#include "mem/heap.h"
+#include "plat/sys_lock.h"
+#include "base/nbitop.h"
+#include "base/ndebug.h"
+#include "arch/ncore.h"
+#include "mem/nheap.h"
 
 /*=========================================================  LOCAL MACRO's  ==*/
 
 /**@brief       Signature for dynamic memory manager
  */
-#define HEAP_MEM_SIGNATURE              ((esAtomic)0xdeadbeefu)
+#define HEAP_MEM_SIGNATURE              ((ncpu_reg)0xdeadbee1u)
 
 /*======================================================  LOCAL DATA TYPES  ==*/
 
 /**@brief       Dynamic allocator memory block header structure
  */
-struct PORT_C_ALIGN(ES_CPU_DEF_DATA_ALIGNMENT) heapMemBlock {
-    struct heapPhy {
-        struct heapMemBlock * prev;
-        esRamSSize            size;
-    }                   phy;
-    struct heapFree {
-        struct heapMemBlock * next;
-        struct heapMemBlock * prev;
-    }                   free;
+struct PORT_C_ALIGN(NCPU_DATA_ALIGNMENT) n_heap_block
+{
+    struct heap_phy
+    {
+        struct n_heap_block *       prev;
+        ncpu_ssize                  size;
+    }                           phy;
+    struct heap_free
+    {
+        struct n_heap_block *       next;
+        struct n_heap_block *       prev;
+    }                           free;
 };
 
 /*=============================================  LOCAL FUNCTION PROTOTYPES  ==*/
 /*=======================================================  LOCAL VARIABLES  ==*/
 
-/**@brief       Module information
- */
-static const ES_MODULE_INFO_CREATE("HeapMem", "Heap Memory management", "Nenad Radulovic");
+static const NMODULE_INFO_CREATE("Heap Memory Management", "Nenad Radulovic");
 
 /*======================================================  GLOBAL VARIABLES  ==*/
 /*============================================  LOCAL FUNCTION DEFINITIONS  ==*/
 /*===================================  GLOBAL PRIVATE FUNCTION DEFINITIONS  ==*/
 /*====================================  GLOBAL PUBLIC FUNCTION DEFINITIONS  ==*/
 
-esError esHeapMemInit(
-    struct esHeapMem *  heapMem,
-    void *              storage,
-    size_t              storageSize) {
 
-    struct heapMemBlock * begin;
+void nheap_init(
+    struct nheap *              heap,
+    void *                      storage,
+    size_t                      size)
+{
+    struct n_heap_block *        begin;
 
-    ES_REQUIRE(ES_API_POINTER, heapMem != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  heapMem->signature != HEAP_MEM_SIGNATURE);
-    ES_REQUIRE(ES_API_POINTER, storage != NULL);
-    ES_REQUIRE(ES_API_RANGE,   storageSize > sizeof(struct heapMemBlock [2]));
-    ES_REQUIRE(ES_API_RANGE,   storageSize < ES_RAM_SSIZE_MAX);
+    NREQUIRE(NAPI_POINTER, heap != NULL);
+    NREQUIRE(NAPI_OBJECT,  heap->signature != HEAP_MEM_SIGNATURE);
+    NREQUIRE(NAPI_POINTER, storage != NULL);
+    NREQUIRE(NAPI_RANGE,   size > sizeof(struct n_heap_block [2]));
+    NREQUIRE(NAPI_RANGE,   size < NCPU_SSIZE_MAX);
 
-    storageSize = ES_ALIGN(storageSize, ES_CPU_DEF_DATA_ALIGNMENT);
-    heapMem->sentinel =
-        (struct heapMemBlock *)((uint8_t *)storage + storageSize) - 1;          /* Sentinel is the last element of the storage              */
-    begin = (struct heapMemBlock *)storage;
-    begin->phy.size  = (esRamSSize)(storageSize
-        - sizeof(struct heapMemBlock [1]) - sizeof(struct heapPhy [1]));
-    begin->phy.prev  = heapMem->sentinel;
-    begin->free.next = heapMem->sentinel;
-    begin->free.prev = heapMem->sentinel;
+    size = NALIGN(size, NCPU_DATA_ALIGNMENT);
+                                              /* Sentinel is the last element */
+    heap->sentinel = (struct n_heap_block *)((uint8_t *)storage + size) - 1;
+    begin = (struct n_heap_block *)storage;
+    begin->phy.size  = (ncpu_ssize)size;
+    begin->phy.size -= (ncpu_ssize)sizeof(struct n_heap_block [1]);
+    begin->phy.size -= (ncpu_ssize)sizeof(struct heap_phy [1]);
+    begin->phy.prev  = heap->sentinel;
+    begin->free.next = heap->sentinel;
+    begin->free.prev = heap->sentinel;
 
-    heapMem->sentinel->phy.size  = -1;
-    heapMem->sentinel->phy.prev  = begin;
-    heapMem->sentinel->free.next = begin;
-    heapMem->sentinel->free.prev = begin;
-    heapMem->size = (size_t)begin->phy.size;
-    heapMem->free = heapMem->size;
+    heap->sentinel->phy.size  = -1;
+    heap->sentinel->phy.prev  = begin;
+    heap->sentinel->free.next = begin;
+    heap->sentinel->free.prev = begin;
+    heap->size = (size_t)begin->phy.size;
+    heap->free = heap->size;
 
-    ES_OBLIGATION(heapMem->signature = HEAP_MEM_SIGNATURE);
-
-    return (ES_ERROR_NONE);
+    NOBLIGATION(heap->signature = HEAP_MEM_SIGNATURE);
 }
 
-esError esHeapMemTerm(
-    struct esHeapMem *  heapMem) {
 
-    ES_REQUIRE(ES_API_POINTER, heapMem != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  heapMem->signature == HEAP_MEM_SIGNATURE);
 
-    heapMem->sentinel = NULL;
+void nheap_term(
+    struct nheap *            heap)
+{
+    NREQUIRE(NAPI_POINTER, heap != NULL);
+    NREQUIRE(NAPI_OBJECT,  heap->signature == HEAP_MEM_SIGNATURE);
 
-    ES_OBLIGATION(heapMem->signature = ~HEAP_MEM_SIGNATURE);
+    heap->sentinel = NULL;
 
-    return (ES_ERROR_NONE);
+    NOBLIGATION(heap->signature = ~HEAP_MEM_SIGNATURE);
 }
 
-esError esHeapMemAllocI(
-    struct esHeapMem *  heapMem,
-    size_t              size,
-    void **             mem) {
 
-    struct heapMemBlock * curr;
 
-    ES_REQUIRE(ES_API_POINTER, heapMem != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  heapMem->signature == HEAP_MEM_SIGNATURE);
-    ES_REQUIRE(ES_API_RANGE,   (size != 0u) && (size < ES_RAM_SSIZE_MAX));
-    ES_REQUIRE(ES_API_POINTER, mem != NULL);
+void * nheap_alloc_i(
+    struct nheap *              heap,
+    size_t                      size)
+{
+    struct n_heap_block *         curr;
 
-    size = ES_ALIGN_UP(size, sizeof(struct heapPhy [1]));
-    curr = heapMem->sentinel->free.next;
+    NREQUIRE(NAPI_POINTER, heap != NULL);
+    NREQUIRE(NAPI_OBJECT,  heap->signature == HEAP_MEM_SIGNATURE);
+    NREQUIRE(NAPI_RANGE,   (size != 0u) && (size < NCPU_SSIZE_MAX));
 
-    while (curr != heapMem->sentinel) {
+    size = NALIGN_UP(size, sizeof(struct heap_phy [1]));
+    curr = heap->sentinel->free.next;
 
-        if ((size_t)curr->phy.size >= size) {
+    while (curr != heap->sentinel) {
 
-            if ((size_t)curr->phy.size >
-                (size + sizeof(struct heapMemBlock [1]))) {
-                struct heapMemBlock * tmp;
+        if (curr->phy.size >= (ncpu_ssize)size) {
 
-                *mem = (void *)(&curr->free);
-                tmp = (struct heapMemBlock *)
-                    ((uint8_t *)curr + size + sizeof(struct heapPhy [1]));      /* Create smaller free block                                */
-                tmp->phy.prev  = curr;                                          /* Point back to the current block                          */
-                tmp->phy.size  =
-                    curr->phy.size - (esRamSSize)size - (esRamSSize)sizeof(struct heapPhy [1]);
-                curr->phy.size = (esRamSSize)size * (-1);                       /* Mark block as allocated                                  */
-                tmp->free.next = curr->free.next;                               /* Remove current and add smaller free block to free list   */
+            if (curr->phy.size >
+                (ncpu_ssize)(size + sizeof(struct n_heap_block [1]))) {
+                struct n_heap_block * tmp;
+                void *                mem;
+
+                                       /* Create smaller free block           */
+                mem            = (void *)(&curr->free);
+                                       /* Point back to the current block     */
+                tmp            = (struct n_heap_block *)
+                    ((uint8_t *)curr + size + sizeof(struct heap_phy [1]));
+                tmp->phy.prev  = curr;
+                tmp->phy.size  = curr->phy.size;
+                tmp->phy.size -= (ncpu_ssize)size;
+                tmp->phy.size -= (ncpu_ssize)sizeof(struct heap_phy [1]);
+                                       /* Mark block as allocated             */
+                curr->phy.size = (ncpu_ssize)size * (-1);
+                                       /* Remove current and add smaller free */
+                                       /* block back to free list             */
+                tmp->free.next = curr->free.next;
                 tmp->free.prev = curr->free.prev;
                 tmp->free.next->free.prev = tmp;
                 tmp->free.prev->free.next = tmp;
-                curr           = (struct heapMemBlock *)
-                    ((uint8_t *)tmp + tmp->phy.size + sizeof(struct heapPhy [1]));
-                curr->phy.prev = tmp;                                           /* Point to the newly created block                         */
+                curr           = (struct n_heap_block *)
+                    ((uint8_t *)tmp + tmp->phy.size + sizeof(struct heap_phy [1]));
+                                       /* Point to the newly created block    */
+                curr->phy.prev = tmp;
 
-                return (ES_ERROR_NONE);
+                return (mem);
             } else {
-                *mem = (void *)(&curr->free);
-                curr->free.next->free.prev = curr->free.prev;                   /* Remove current block from free list                      */
-                curr->free.prev->free.next = curr->free.next;
-                curr->phy.size = (esRamSSize)(curr->phy.size * (-1));           /* Mark block as allocated                                  */
+                void *               mem;
 
-                return (ES_ERROR_NONE);
+                                      /* Remove current block from free list  */
+                                      /* and mark it block as allocated       */
+                mem                        = (void *)(&curr->free);
+                curr->free.next->free.prev = curr->free.prev;
+                curr->free.prev->free.next = curr->free.next;
+                curr->phy.size             = curr->phy.size * (-1);
+
+                return (mem);
             }
         }
         curr = curr->free.next;
     }
 
-    return (ES_ERROR_NO_MEMORY);
+    return (NULL);
 }
 
-esError esHeapMemAlloc(
-    struct esHeapMem *  heapMem,
-    size_t              size,
-    void **             mem) {
 
-    esError             error;
-    esAtomic            intCtx;
 
-    ES_CRITICAL_LOCK_ENTER(&intCtx);
-    error = esHeapMemAllocI(
-        heapMem,
-        size,
-        mem);
-    ES_CRITICAL_LOCK_EXIT(intCtx);
+void * nheap_alloc(
+    struct nheap *              heap,
+    size_t                      size)
+{
+    nsys_lock                   sys_lock;
+    void *                      mem;
 
-    return (error);
+    nsys_lock_enter(&sys_lock);
+    mem = nheap_alloc_i(heap, size);
+    nsys_lock_exit(&sys_lock);
+
+    return (mem);
 }
 
-esError esHeapMemFreeI(
-    struct esHeapMem *  heapMem,
-    void *              mem) {
 
-    struct heapMemBlock * curr;
-    struct heapMemBlock * tmp;
 
-    ES_REQUIRE(ES_API_POINTER, heapMem != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  heapMem->signature == HEAP_MEM_SIGNATURE);
-    ES_REQUIRE(ES_API_POINTER, mem != NULL);
+void nheap_free_i(
+    struct nheap *              heap,
+    void *                      mem)
+{
+    struct n_heap_block *         curr;
+    struct n_heap_block *         tmp;
 
-    curr           = (struct heapMemBlock *)
-        ((uint8_t *)mem - offsetof(struct heapMemBlock, free));
-    curr->phy.size = (esRamSSize)curr->phy.size * (-1);                         /* Mark block as free                                       */
-    tmp            = (struct heapMemBlock *)
-        ((uint8_t *)curr + curr->phy.size + sizeof(struct heapPhy [1]));
+    NREQUIRE(NAPI_POINTER, heap != NULL);
+    NREQUIRE(NAPI_OBJECT,  heap->signature == HEAP_MEM_SIGNATURE);
+    NREQUIRE(NAPI_POINTER, mem != NULL);
 
-    if ((curr->phy.prev->phy.size > 0) && (tmp->phy.size < 0)) {               /* Previous block is free                                   */
-        curr->phy.prev->phy.size +=
-            curr->phy.size + (esRamSSize)sizeof(struct heapPhy [1]);
-        tmp->phy.prev             = curr->phy.prev;
-    } else if ((curr->phy.prev->phy.size < 0) && (tmp->phy.size > 0)) {        /* Next block is free                                       */
+    curr           = (struct n_heap_block *)
+        ((uint8_t *)mem - offsetof(struct n_heap_block, free));
+    curr->phy.size = (ncpu_ssize)curr->phy.size * (-1);                         /* Mark block as free                   */
+    tmp            = (struct n_heap_block *)
+        ((uint8_t *)curr + curr->phy.size + sizeof(struct heap_phy [1]));
+
+    if ((curr->phy.prev->phy.size > 0) && (tmp->phy.size < 0)) {                /* Previous block is free               */
+        curr->phy.prev->phy.size  += curr->phy.size;
+        curr->phy.prev->phy.size  += (ncpu_ssize)sizeof(struct heap_phy [1]);
+        tmp->phy.prev              = curr->phy.prev;
+    } else if ((curr->phy.prev->phy.size < 0) && (tmp->phy.size > 0)) {         /* Next block is free                   */
         curr->free.next            = tmp->free.next;
         curr->free.prev            = tmp->free.prev;
         curr->free.prev->free.next = curr;
         curr->free.next->free.prev = curr;
-        curr->phy.size += tmp->phy.size + (esRamSSize)sizeof(struct heapPhy [1]);
-        tmp = (struct heapMemBlock *)
-            ((uint8_t *)curr + curr->phy.size + sizeof(struct heapPhy [1]));
-        tmp->phy.prev   = curr;
-    } else if ((curr->phy.prev->phy.size > 0) && (tmp->phy.size > 0)) {       /* Previous and next blocks are free                        */
-        tmp->free.prev->free.next = tmp->free.next;
-        tmp->free.next->free.prev = tmp->free.prev;
-        curr->phy.prev->phy.size +=
-            curr->phy.size + tmp->phy.size + (esRamSSize)sizeof(struct heapPhy [2]);
-        tmp = (struct heapMemBlock *)
-            ((uint8_t *)curr->phy.prev + curr->phy.prev->phy.size + sizeof(struct heapPhy [1]));
-        tmp->phy.prev = curr->phy.prev;
-    } else {                                                                    /* Previous and next blocks are allocated                   */
-        curr->free.next = heapMem->sentinel->free.next;
-        curr->free.prev = heapMem->sentinel;
+        curr->phy.size            += tmp->phy.size;
+        curr->phy.size            += (ncpu_ssize)sizeof(struct heap_phy [1]);
+        tmp                        = (struct n_heap_block *)
+            ((uint8_t *)curr + curr->phy.size + sizeof(struct heap_phy [1]));
+        tmp->phy.prev              = curr;
+    } else if ((curr->phy.prev->phy.size > 0) && (tmp->phy.size > 0)) {         /* Previous and next blocks are free    */
+        tmp->free.prev->free.next  = tmp->free.next;
+        tmp->free.next->free.prev  = tmp->free.prev;
+        curr->phy.prev->phy.size  += curr->phy.size + tmp->phy.size;
+        curr->phy.prev->phy.size  += (ncpu_ssize)sizeof(struct heap_phy [2]);
+        tmp                        = (struct n_heap_block *)
+            ((uint8_t *)curr->phy.prev + curr->phy.prev->phy.size +
+            sizeof(struct heap_phy [1]));
+        tmp->phy.prev              = curr->phy.prev;
+    } else {                                                                    /* Previous and next blocks are used    */
+        curr->free.next            = heap->sentinel->free.next;
+        curr->free.prev            = heap->sentinel;
         curr->free.prev->free.next = curr;
         curr->free.next->free.prev = curr;
     }
-
-    return (ES_ERROR_NONE);
 }
 
-esError esHeapMemFree(
-    struct esHeapMem *  heapMem,
-    void *              mem) {
 
-    esError             error;
-    esAtomic            intCtx;
 
-    ES_CRITICAL_LOCK_ENTER(&intCtx);
-    error = esHeapMemFreeI(
-        heapMem,
-        mem);
-    ES_CRITICAL_LOCK_EXIT(intCtx);
+void nheap_free(
+    struct nheap *              heap,
+    void *                      mem)
+{
+    nsys_lock                   sys_lock;
 
-    return (error);
+    nsys_lock_enter(&sys_lock);
+    nheap_free_i(heap, mem);
+    nsys_lock_exit(&sys_lock);
 }
 
-esError esHeapGetSizeI(
-    struct esHeapMem *  heapMem,
-    size_t *            size) {
 
-    ES_REQUIRE(ES_API_POINTER, heapMem != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  heapMem->signature == HEAP_MEM_SIGNATURE);
-    ES_REQUIRE(ES_API_POINTER, size != NULL);
 
-    *size = heapMem->size;
+size_t nheap_unoccupied_i(
+    const struct nheap *        heap)
+{
+    (void)heap;
 
-    return (ES_ERROR_NONE);
+    /*
+     * TODO: Implementation missing
+     */
+
+    return (0);
 }
 
-esError esHeapGetSize(
-    struct esHeapMem *  heapMem,
-    size_t *            size) {
 
-    return (esHeapGetSizeI(heapMem, size));
+
+size_t nheap_unoccupied(
+    const struct nheap *        heap)
+{
+    nsys_lock                   sys_lock;
+    size_t                      unoccupied;
+
+    nsys_lock_enter(&sys_lock);
+    unoccupied = nheap_unoccupied_i(heap);
+    nsys_lock_exit(&sys_lock);
+
+    return (unoccupied);
 }
 
-esError esHeapGetBlockSizeI(
-    struct esHeapMem *  heapMem,
-    size_t *            size) {
 
-    ES_REQUIRE(ES_API_POINTER, heapMem != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  heapMem->signature == HEAP_MEM_SIGNATURE);
-    ES_REQUIRE(ES_API_POINTER, size != NULL);
 
-    *size = heapMem->size;
+size_t nheap_size_i(
+    const struct nheap *        heap)
+{
+    (void)heap;
 
-    return (ES_ERROR_NONE);
+    /*
+     * TODO: Implementation missing
+     */
+
+    return (0);
 }
 
-esError esHeapGetBlockSize(
-    struct esHeapMem *  heapMem,
-    size_t *            size) {
 
-    return (esHeapGetBlockSizeI(heapMem, size));
+
+size_t nheap_size(
+    const struct nheap *        heap)
+{
+    nsys_lock                   sys_lock;
+    size_t                      size;
+
+    nsys_lock_enter(&sys_lock);
+    size = nheap_unoccupied_i(heap);
+    nsys_lock_exit(&sys_lock);
+
+    return (size);
 }
-
-#if 0
-void esDMemUpdateStatusI(
-    esHeapMem *    handle,
-    esMemStatus_T *     status) {
-
-    size_t              size;
-    size_t              freeTotal;
-    size_t              freeAvailable;
-    struct heapMemBlock *       curr;
-
-    ES_DBG_API_REQUIRE(ES_DBG_POINTER_NULL, NULL != handle);
-    ES_DBG_API_REQUIRE(ES_DBG_OBJECT_NOT_VALID, HEAP_MEM_SIGNATURE == handle->signature);
-    ES_DBG_API_REQUIRE(ES_DBG_POINTER_NULL, NULL != status);
-
-    size          = 0u;
-    freeTotal     = 0u;
-    freeAvailable = 0u;
-    curr          = handle->sentinel->phyPrev;
-
-    while (curr != handle->sentinel) {
-        size += curr->phySize;
-
-        if (NULL != curr->freeNext) {
-            size_t freeSize;
-
-            freeSize = curr->phySize - sizeof(struct heapMemBlock);
-            freeTotal += freeSize;
-
-            if (freeSize > freeAvailable) {
-                freeAvailable = freeSize;
-            }
-        }
-        curr = curr->phyPrev;
-    }
-    status->size = size;
-    status->freeSpaceTotal = freeTotal;
-    status->freeSpaceContiguous = freeAvailable;
-}
-
-void esDMemUpdateStatus(
-    esHeapMem *    handle,
-    esMemStatus_T *     status) {
-
-    esAtomic           intCtx;
-
-    ES_CRITICAL_LOCK_ENTER(&intCtx);
-    esDMemUpdateStatusI(
-        handle,
-        status);
-    ES_CRITICAL_LOCK_EXIT(intCtx);
-}
-#endif
 
 /*================================*//** @cond *//*==  CONFIGURATION ERRORS  ==*/
 /** @endcond *//** @} *//** @} *//*********************************************

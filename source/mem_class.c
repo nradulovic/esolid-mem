@@ -27,346 +27,180 @@
 
 /*=========================================================  INCLUDE FILES  ==*/
 
-#include "plat/critical.h"
-#include "mem/mem_class.h"
+#include "plat/sys_lock.h"
+#include "mem/nmem_class.h"
 
 /*=========================================================  LOCAL MACRO's  ==*/
 
-#define MEM_SIGNATURE                   ((esAtomic)0x01010505ul)
+#define MEM_SIGNATURE                   ((ncpu_reg)0x01010505ul)
 
-#define MEM_CLASS_SIGNATURE             ((esAtomic)0x5a5a5a5aul)
+#define MEM_CLASS_SIGNATURE             ((ncpu_reg)0x5a5a5a5aul)
 
 /*======================================================  LOCAL DATA TYPES  ==*/
 
-struct esMemClass {
-    esError          (* init)    (void *, void *, size_t, size_t);
-    esError          (* term)    (void *);
-    esError          (* alloc)   (void *, size_t, void **);
-    esError          (* free)    (void *, void *);
-    esError          (* getSize) (void *, size_t *);
-    esError          (* getFree) (void *, size_t *);
-    esError          (* getBlockSize)(void *, size_t *);
-#if (CONFIG_API_VALIDATION) || defined(__DOXYGEN__)
-    esAtomic            signature;
+struct nmem_class
+{
+    void *                   (* alloc)         (void *, size_t);
+    void                     (* free)          (void *, void *);
+    size_t                   (* get_unoccupied)(void *);
+    size_t                   (* get_size)      (void *);
+#if (CONFIG_DEBUG_API == 1) || defined(__DOXYGEN__)
+    ncpu_reg                    signature;
 #endif
 };
 
 /*=============================================  LOCAL FUNCTION PROTOTYPES  ==*/
 
-static esError wrapHeapInit(
-    void *              handle,
-    void *              storage,
-    size_t              storageSize,
-    size_t              block);
-
-static esError wrapPoolInit(
-    void *              handle,
-    void *              storage,
-    size_t              storageSize,
-    size_t              block);
-
-static esError wrapStaticInit(
-    void *              handle,
-    void *              storage,
-    size_t              storageSize,
-    size_t              block);
+static void null_method(void);
 
 /*=======================================================  LOCAL VARIABLES  ==*/
-
-static const ES_MODULE_INFO_CREATE("mem class", "Memory classes", "Nenad Radulovic");
-
 /*======================================================  GLOBAL VARIABLES  ==*/
 
-const PORT_C_ROM struct esMemClass esGlobalHeapMemClass = {
-    wrapHeapInit,
-    (esError (*)(void *))esHeapMemTerm,
-    (esError (*)(void *, size_t, void **))esHeapMemAllocI,
-    (esError (*)(void *, void *))esHeapMemFreeI,
-    (esError (*)(void *, size_t *))esHeapGetSizeI,
-    NULL,
-    (esError (*)(void *, size_t *))esHeapGetBlockSizeI
-#if (CONFIG_API_VALIDATION) || defined(__DOXYGEN__)
+const PORT_C_ROM struct nmem_class g_heap_mem_class =
+{
+    (void * (*)(void *, size_t))nheap_alloc_i,
+    (void   (*)(void *, void *))nheap_free_i,
+    (size_t (*)(void *))        nheap_unoccupied_i,
+    (size_t (*)(void *))        nheap_size_i
+#if (CONFIG_DEBUG_API == 1) || defined(__DOXYGEN__)
     , MEM_CLASS_SIGNATURE
 #endif
 };
 
-const PORT_C_ROM struct esMemClass esGlobalPoolMemClass = {
-    wrapPoolInit,
-    NULL,
-    (esError (*)(void *, size_t, void **))esPoolMemAllocI,
-    (esError (*)(void *, void *))esPoolMemFreeI,
-    NULL,
-    NULL,
-    NULL
-#if (CONFIG_API_VALIDATION) || defined(__DOXYGEN__)
+const PORT_C_ROM struct nmem_class g_pool_mem_class =
+{
+    (void * (*)(void *, size_t))npool_alloc_i,
+    (void   (*)(void *, void *))npool_free_i,
+    (size_t (*)(void *))        npool_unoccupied_i,
+    (size_t (*)(void *))        npool_size_i
+#if (CONFIG_DEBUG_API == 1) || defined(__DOXYGEN__)
     , MEM_CLASS_SIGNATURE
 #endif
 };
 
-const PORT_C_ROM struct esMemClass esGlobalStaticMemClass = {
-    wrapStaticInit,
-    NULL,
-    (esError (*)(void *, size_t, void **))esStaticMemAllocI,
-    NULL,
-    (esError (*)(void *, size_t *))esStaticMemGetSizeI,
-    NULL,
-    NULL
-#if (CONFIG_API_VALIDATION) || defined(__DOXYGEN__)
+const PORT_C_ROM struct nmem_class g_static_mem_class =
+{
+    (void * (*)(void *, size_t))nstatic_alloc_i,
+    (void   (*)(void *, void *))null_method,
+    (size_t (*)(void *))        nstatic_unoccupied_i,
+    (size_t (*)(void *))        nstatic_size_i
+#if (CONFIG_DEBUG_API == 1) || defined(__DOXYGEN__)
     , MEM_CLASS_SIGNATURE
 #endif
 };
 
 /*============================================  LOCAL FUNCTION DEFINITIONS  ==*/
 
-static esError wrapHeapInit(
-    void *              handle,
-    void *              storage,
-    size_t              storageSize,
-    size_t              block) {
+static void null_method(void)
+{
 
-    esError             error;
-
-    (void)block;
-    error = esHeapMemInit(handle, storage, storageSize);
-
-    return (error);
-}
-
-static esError wrapPoolInit(
-    void *              handle,
-    void *              storage,
-    size_t              storageSize,
-    size_t              block) {
-
-    esError             error;
-
-    error = esPoolMemInit(handle, storage, storageSize, block);
-
-    return (error);
-}
-
-static esError wrapStaticInit(
-    void *              handle,
-    void *              storage,
-    size_t              storageSize,
-    size_t              block) {
-
-    esError             error;
-
-    (void)block;
-    error = esStaticMemInit(handle, storage, storageSize);
-
-    return (error);
 }
 
 /*===================================  GLOBAL PRIVATE FUNCTION DEFINITIONS  ==*/
 /*====================================  GLOBAL PUBLIC FUNCTION DEFINITIONS  ==*/
 
-esError esMemInit(
-    const PORT_C_ROM struct esMemClass * memClass,
-    struct esMem *      object,
-    void *              buffer,
-    size_t              size,
-    size_t              block) {
 
-    esError             error;
-
-    ES_REQUIRE(ES_API_POINTER, object != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  object->signature != MEM_SIGNATURE);
-    ES_REQUIRE(ES_API_POINTER, memClass != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  memClass->signature == MEM_CLASS_SIGNATURE);
-    ES_REQUIRE(ES_API_POINTER, buffer != NULL);
-
-    error = memClass->init(&object->handle, buffer, size, block);
-
-    if (error == ES_ERROR_NONE) {
-        object->memClass = memClass;
-        ES_OBLIGATION(object->signature = MEM_SIGNATURE);
-    }
-
-    return (error);
+void nmem_bind(
+    struct nmem *               object,
+    const PORT_C_ROM struct nmem_class * mem_class)
+{
+    object->mem_class = mem_class;
 }
 
-esError esMemTerm(
-    struct esMem *      object) {
 
-    esError             error;
 
-    ES_REQUIRE(ES_API_POINTER, object != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  object->signature == MEM_SIGNATURE);
-
-    error = ES_ERROR_NOT_IMPLEMENTED;
-
-    if (object->memClass->term != NULL) {
-        error = object->memClass->term(&object->handle);
-    }
-    object->memClass = NULL;
-    ES_OBLIGATION(object->signature = ~(esAtomic)MEM_SIGNATURE);
-
-    return (error);
+void * nmem_alloc_i(
+    struct nmem *               object,
+    size_t                      size)
+{
+    return (object->mem_class->alloc(&object->handle, size));
 }
 
-esError esMemAllocI(
-    struct esMem *      object,
-    size_t              size,
-    void **             mem) {
 
-    esError             error;
 
-    ES_REQUIRE(ES_API_POINTER, object != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  object->signature == MEM_SIGNATURE);
+void * nmem_alloc(
+    struct nmem *               object,
+    size_t                      size)
+{
+    nsys_lock                   sys_lock;
+    void *                      mem;
 
-    error = object->memClass->alloc(&object->handle, size, mem);
+    nsys_lock_enter(&sys_lock);
+    mem = nmem_alloc_i(object, size);
+    nsys_lock_exit(&sys_lock);
 
-    return (error);
+    return (mem);
 }
 
-esError esMemAlloc(
-    struct esMem *      object,
-    size_t              size,
-    void **             mem) {
 
-    esError             error;
-    esLockCtx           lockCtx;
 
-    ES_CRITICAL_LOCK_ENTER(&lockCtx);
-    error = esMemAllocI(object, size, mem);
-    ES_CRITICAL_LOCK_EXIT(lockCtx);
-
-    return (error);
+void nmem_free_i(
+    struct nmem *               object,
+    void *                      mem)
+{
+    object->mem_class->free(&object->handle, mem);
 }
 
-esError esMemFreeI(
-    struct esMem *      object,
-    void *              mem) {
 
-    esError             error;
 
-    ES_REQUIRE(ES_API_POINTER, object != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  object->signature == MEM_SIGNATURE);
+void nmem_free(
+    struct nmem *               object,
+    void *                      mem)
+{
+    nsys_lock                   sys_lock;
 
-    error = ES_ERROR_NOT_IMPLEMENTED;
-
-    if (object->memClass->free != NULL) {
-        error = object->memClass->free(&object->handle, mem);
-    }
-
-    return (error);
+    nsys_lock_enter(&sys_lock);
+    nmem_free_i(object, mem);
+    nsys_lock_exit(&sys_lock);
 }
 
-esError esMemFree(
-    struct esMem *      object,
-    void *              mem) {
 
-    esError             error;
-    esLockCtx           lockCtx;
 
-    ES_CRITICAL_LOCK_ENTER(&lockCtx);
-    error = esMemFreeI(object, mem);
-    ES_CRITICAL_LOCK_EXIT(lockCtx);
-
-    return (error);
+size_t nget_mem_unoccupied_i(
+    struct nmem *               object)
+{
+    return (object->mem_class->get_unoccupied(&object->handle));
 }
 
-esError esMemGetSizeI(
-    struct esMem *      object,
-    size_t *            size) {
 
-    esError             error;
 
-    ES_REQUIRE(ES_API_POINTER, object != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  object->signature == MEM_SIGNATURE);
+size_t nget_mem_unoccupied(
+    struct nmem *               object)
+{
+    nsys_lock                   sys_lock;
+    size_t                      unoccupied;
 
-    error = ES_ERROR_NOT_IMPLEMENTED;
+    nsys_lock_enter(&sys_lock);
+    unoccupied = nget_mem_unoccupied_i(object);
+    nsys_lock_exit(&sys_lock);
 
-    if (object->memClass->getSize != NULL) {
-        error = object->memClass->getSize(&object->handle, size);
-    }
-
-    return (error);
+    return (unoccupied);
 }
 
-esError esMemGetSize(
-    struct esMem *      object,
-    size_t *            size) {
 
-    esError             error;
-    esLockCtx           lockCtx;
 
-    ES_CRITICAL_LOCK_ENTER(&lockCtx);
-    error = esMemGetSizeI(object, size);
-    ES_CRITICAL_LOCK_EXIT(lockCtx);
-
-    return (error);
+size_t nget_mem_size_i(
+    struct nmem *               object)
+{
+    return (object->mem_class->get_size(&object->handle));
 }
 
-esError esMemGetFreeI(
-    struct esMem *      object,
-    size_t *            free) {
 
-    esError             error;
 
-    ES_REQUIRE(ES_API_POINTER, object != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  object->signature == MEM_SIGNATURE);
+size_t nget_mem_size(
+    struct nmem *               object)
+{
+    nsys_lock                   sys_lock;
+    size_t                      size;
 
-    error = ES_ERROR_NOT_IMPLEMENTED;
+    nsys_lock_enter(&sys_lock);
+    size = nget_mem_size_i(object);
+    nsys_lock_exit(&sys_lock);
 
-    if (object->memClass->getFree != NULL) {
-        error = object->memClass->getFree(&object->handle, free);
-    }
-
-    return (error);
-
-}
-
-esError esMemGetFree(
-    struct esMem *      object,
-    size_t *            free) {
-
-    esError             error;
-    esLockCtx           lockCtx;
-
-    ES_CRITICAL_LOCK_ENTER(&lockCtx);
-    error = esMemGetFreeI(object, free);
-    ES_CRITICAL_LOCK_EXIT(lockCtx);
-
-    return (error);
-
-}
-
-esError esMemGetBlockSizeI(
-    struct esMem *      object,
-    size_t *            blockSize) {
-
-    esError             error;
-
-    ES_REQUIRE(ES_API_POINTER, object != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  object->signature == MEM_SIGNATURE);
-
-    error = ES_ERROR_NOT_IMPLEMENTED;
-
-    if (object->memClass->getBlockSize != NULL) {
-        error = object->memClass->getBlockSize(&object->handle, blockSize);
-    }
-
-    return (error);
-}
-
-esError esMemGetBlockSize(
-    struct esMem *      object,
-    size_t *            blockSize) {
-
-    esError             error;
-    esLockCtx           lockCtx;
-
-    ES_CRITICAL_LOCK_ENTER(&lockCtx);
-    error = esMemGetBlockSizeI(object, blockSize);
-    ES_CRITICAL_LOCK_EXIT(lockCtx);
-
-    return (error);
+    return (size);
 }
 
 /*================================*//** @cond *//*==  CONFIGURATION ERRORS  ==*/
 /** @endcond *//** @} *//******************************************************
- * END of mem_class.c
+ * END of nmem_class.c
  ******************************************************************************/

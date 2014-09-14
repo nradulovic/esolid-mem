@@ -29,21 +29,21 @@
  * @brief       Pool memory API
  * @{ *//*--------------------------------------------------------------------*/
 
-#ifndef ES_POOL_MEM_H_
-#define ES_POOL_MEM_H_
+#ifndef NPOOL_H
+#define NPOOL_H
 
 /*=========================================================  INCLUDE FILES  ==*/
 
 #include <stddef.h>
 
 #include "plat/compiler.h"
-#include "base/debug.h"
-#include "base/error.h"
+#include "base/ndebug.h"
+#include "base/nbitop.h"
 
 /*===============================================================  MACRO's  ==*/
 
-#define ES_POOL_MEM_COMPUTE_SIZE(blocks, blockSize)                             \
-    ((blocks) * (ES_ALIGN_UP(blockSize, sizeof(esAtomic))))
+#define NPOOL_MEM_COMPUTE_SIZE(blocks, blockSize)                               \
+    ((blocks) * (NALIGN_UP(blockSize, sizeof(ncpu_reg))))
 
 /*------------------------------------------------------  C++ extern begin  --*/
 #ifdef __cplusplus
@@ -52,142 +52,127 @@ extern "C" {
 
 /*============================================================  DATA TYPES  ==*/
 
+struct n_pool_block;
+
 /**@brief       Pool memory instance
- * @details     This structure holds information about pool memory instance.
- * @p           This structure hold information about pool and block sizes.
+ * @details     This structure holds information about pool_mem memory instance.
+ * @p           This structure hold information about pool_mem and block sizes.
  *              Additionally, it holds a guard member which will ensure mutual
  *              exclusion in preemption environments.
- * @see         esPoolMemInit()
+ * @see         npool_init()
  * @api
  */
-struct esPoolMem {
-    struct poolMemBlock * sentinel;                                             /**<@brief Pointer to the pool sentinel                     */
-    size_t              free;
-    size_t              size;                                                   /**<@brief The size of pool memory                          */
-    size_t              blockSize;                                              /**<@brief Size of one block                                */
-#if (CONFIG_API_VALIDATION == 1) || defined(__DOXYGEN__)
-    esAtomic            signature;                                              /**<@brief Structure signature, used during development only*/
+struct npool
+{
+    struct n_pool_block *       sentinel;           /**<@brief Sentinel       */
+    size_t                      free;
+    size_t                      size;               /**<@brief Size of pool   */
+    size_t                      block_size;         /**<@brief Size of block  */
+#if (CONFIG_DEBUG_API == 1) || defined(__DOXYGEN__)
+    ncpu_reg                    signature;          /**<@brief Debug signature*/
 #endif
 };
 
-/**@brief       Pool memory instance poolMem type
+/**@brief       Pool memory instance pool_mem type
  * @api
  */
-typedef struct esPoolMem esPoolMem;
+typedef struct npool es_pool;
 
 /*======================================================  GLOBAL VARIABLES  ==*/
 /*===================================================  FUNCTION PROTOTYPES  ==*/
 
-/**@brief       Initializes pool memory instance
- * @param       poolMem
- *              Pointer to pool memory instance, see @ref esPoolMem.
- * @param       pool
- *              Reserved memory area for pool allocator.
- * @param       poolSize
- *              The size of reserved memory area expressed in bytes.
- * @param       blockSize
- *              The size of one block expressed in bytes.
- * @return      Error status
- *              ES_ERROR_NONE
- * @details     This function must be called before any call to esPoolMemAllocI()
- *              or esPoolMemAlloc().
- * @warning     Pointers to @c poolMem and @c pool must be aligned to CPU defined
- *              alignment.
+
+/**@brief       Initializes pool_mem memory instance
+ * @param       pool_mem
+ *              Pointer to pool_mem memory instance, see @ref npool.
+ * @param       pool_mem
+ *              Reserved memory area for pool_mem allocator.
+ * @param       array_size
+ *              The get_size of reserved memory area expressed in bytes.
+ * @param       block_size
+ *              The get_size of one block expressed in bytes.
+ * @details     This function must be called before any call to npool_alloc_i()
+ *              or npool_alloc().
  * @api
  */
-esError esPoolMemInit(
-    struct esPoolMem *  poolMem,
-    void *              array,
-    size_t              arraySize,
-    size_t              blockSize);
+void npool_init(
+    struct npool *              pool,
+    void *                      array,
+    size_t                      array_size,
+    size_t                      block_size);
 
-/**@brief       Calculates required reserved memory size for defined number of
- *              blocks.
- * @param       blocks
- *              Number of required blocks.
- * @param       blockSize
- *              The size of one block.
- * @return      Required reserved memory size.
- * @api
- */
-size_t esPoolMemComputeSize(
-    size_t              blocks,
-    size_t              blockSize);
 
-/**@brief       Allocate one block from memory pool
- * @param       poolMem
- *              Pointer to pool memory instance, see @ref esPoolMem.
- * @param       size
- *              The size of requested memory. If you know pool size then you can
- *              safely put '0' here.
- * @param       mem
- *              Pointer to requested block.
+
+/**@brief       Allocate one block from memory pool_mem
+ * @param       pool_mem
+ *              Pointer to pool_mem memory instance, see @ref npool.
  * @return      eSolid standard error:
  *              - @ref ES_ERROR_NONE - no error occurred
  *              - @ref ES_ERROR_NO_MEMORY - not enough memory available
- *              - @ref ES_ERROR_ARG_OUT_OF_RANGE - requested size is bigger than
- *                  the pool block size
  * @iclass
  */
-esError esPoolMemAllocI(
-    struct esPoolMem *  poolMem,
-    size_t              size,
-    void **             mem);
+void * npool_alloc_i(
+    struct npool *              pool);
 
-/**@brief       Allocate one block from memory pool
- * @param       poolMem
- *              Pointer to pool memory instance, see @ref esPoolMem.
- * @param       size
- *              The size of requested memory. If you know pool size then you can
- *              safely put '0' here.
- * @param       mem
- *              Pointer to requested block.
+
+
+/**@brief       Allocate one block from memory pool_mem
+ * @param       pool_mem
+ *              Pointer to pool_mem memory instance, see @ref npool.
  * @return      eSolid standard error:
  *              - @ref ES_ERROR_NONE - no error occurred
  *              - @ref ES_ERROR_NO_MEMORY - not enough memory available
- *              - @ref ES_ERROR_ARG_OUT_OF_RANGE - requested size is bigger than
- *                  the pool block size
  * @api
  */
-esError esPoolMemAlloc(
-    struct esPoolMem *  poolMem,
-    size_t              size,
-    void **             mem);
+void * npool_alloc(
+    struct npool *              pool);
+
+
 
 /**
  * @brief       Oslobadja prethodno alocirani blok
- * @param       [in] poolMem             Deskriptor pool alokatora
+ * @param       [in] pool_mem             Deskriptor pool_mem alokatora
  * @param       [in] mem                Prethodno alociran blok memorije
  * @iclass
  */
-esError esPoolMemFreeI(
-    struct esPoolMem *  poolMem,
-    void *              mem);
+void npool_free_i(
+    struct npool *              pool,
+    void *                      mem);
+
+
 
 /**
  * @brief       Oslobadja prethodno alocirani blok
- * @param       [in] poolMem             Deskriptor pool alokatora
+ * @param       [in] pool_mem             Deskriptor pool_mem alokatora
  * @param       [in] mem                Prethodno alociran blok memorije
- * @note        Funkcija koristi makroe @ref ES_CRITICAL_LOCK_ENTER i
- *              @ref ES_CRITICAL_LOCK_EXIT za zastitu memorije od istovremenog
+ * @note        Funkcija koristi makroe @ref ES_LOCK_SYS i
+ *              @ref ES_UNLOCK_SYS za zastitu memorije od istovremenog
  *              pristupa.
  * @api
  */
-esError esPoolMemFree(
-    struct esPoolMem *  poolMem,
-    void *              mem);
+void npool_free(
+    struct npool *              pool,
+    void *                      mem);
 
-esError esPoolMemGetFreeI(
-    struct esPoolMem *  poolMem,
-    size_t *            size);
 
-esError esPoolMemGetBlockSizeI(
-    struct esPoolMem *  poolMem,
-    size_t *            size);
 
-esError esPoolMemGetBlockSize(
-    struct esPoolMem *  poolMem,
-    size_t *            size);
+size_t npool_unoccupied_i(
+    const struct npool *        pool);
+
+
+
+size_t npool_unoccupied(
+    const struct npool *        pool);
+
+
+
+size_t npool_size_i(
+    const struct npool *        pool);
+
+
+
+size_t npool_size(
+    const struct npool *        pool);
 
 /*--------------------------------------------------------  C++ extern end  --*/
 #ifdef __cplusplus
@@ -196,6 +181,6 @@ esError esPoolMemGetBlockSize(
 
 /*================================*//** @cond *//*==  CONFIGURATION ERRORS  ==*/
 /** @endcond *//** @} *//** @} *//*********************************************
- * END of pool_mem.h
+ * END of pool.h
  ******************************************************************************/
-#endif /* ES_POOL_MEM_H_ */
+#endif /* NPOOL_H */

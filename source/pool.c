@@ -30,190 +30,191 @@
 
 /*=========================================================  INCLUDE FILES  ==*/
 
-#include "plat/critical.h"
-#include "base/bitop.h"
-#include "mem/pool.h"
+#include "plat/sys_lock.h"
+#include "base/nbitop.h"
+#include "mem/npool.h"
 
 /*=========================================================  LOCAL MACRO's  ==*/
 
-/**@brief       Signature for pool memory manager
+/**@brief       Signature for pool_mem memory manager
  */
-#define POOL_MEM_SIGNATURE              ((esAtomic)0xdeadbeeeu)
+#define POOL_MEM_SIGNATURE              ((ncpu_reg)0xdeadbee2u)
 
 /*======================================================  LOCAL DATA TYPES  ==*/
 
 /**@brief       Pool allocator header structure
  */
-struct poolMemBlock {
-    struct poolMemBlock * next; /**<@brief Next free block                                  */
+struct n_pool_block
+{
+    struct n_pool_block *       next;                                           /**<@brief Next free block              */
 };
 
 /*=============================================  LOCAL FUNCTION PROTOTYPES  ==*/
 /*=======================================================  LOCAL VARIABLES  ==*/
 
-/**@brief       Module information
- */
-static const ES_MODULE_INFO_CREATE("PoolMem", "Pool Memory management", "Nenad Radulovic");
+static const NMODULE_INFO_CREATE("Pool Memory Module", "Nenad Radulovic");
 
 /*======================================================  GLOBAL VARIABLES  ==*/
 /*============================================  LOCAL FUNCTION DEFINITIONS  ==*/
 /*===================================  GLOBAL PRIVATE FUNCTION DEFINITIONS  ==*/
 /*====================================  GLOBAL PUBLIC FUNCTION DEFINITIONS  ==*/
 
-esError esPoolMemInit(
-    struct esPoolMem * poolMem,
-    void * array,
-    size_t arraySize,
-    size_t blockSize) {
 
-    size_t blockCnt;
-    size_t nBlocks;
-    struct poolMemBlock * block;
+void npool_init(
+    struct npool *              pool,
+    void *                      array,
+    size_t                      array_size,
+    size_t                      block_size)
+{
+    size_t                      block_cnt;
+    size_t                      nblocks;
+    struct n_pool_block *         block;
 
-    blockSize = ES_ALIGN_UP(blockSize, sizeof(esAtomic));
+    NREQUIRE(NAPI_POINTER, pool != NULL);
+    NREQUIRE(NAPI_POINTER, array != NULL);
+    NREQUIRE(NAPI_RANGE,   block_size != 0u);
+    NREQUIRE(NAPI_RANGE,   block_size <= array_size);
 
-    ES_REQUIRE(ES_API_POINTER, poolMem != NULL);
-    ES_REQUIRE(ES_API_POINTER, array != NULL);
-    ES_REQUIRE(ES_API_RANGE,   blockSize != 0u);
-    ES_REQUIRE(ES_API_RANGE,   blockSize <= arraySize);
+    block_size = NALIGN_UP(block_size, NCPU_DATA_ALIGNMENT);
+    nblocks    = array_size / block_size;
+    pool->size = array_size;
+    pool->free = array_size;
+    pool->block_size = block_size;
+    pool->sentinel = (struct n_pool_block *)array;
+    block = pool->sentinel;
 
-    nBlocks = arraySize / blockSize;
-    poolMem->size = arraySize;
-    poolMem->free = arraySize;
-    poolMem->blockSize = blockSize;
-    poolMem->sentinel = (struct poolMemBlock *) array;
-    block = poolMem->sentinel;
-
-    for (blockCnt = 0u; blockCnt < nBlocks - 1u; blockCnt++) {
-        block->next = (struct poolMemBlock *) ((uint8_t *) block
-                        + poolMem->blockSize);
+    for (block_cnt = 0u; block_cnt < nblocks - 1u; block_cnt++) {
+        block->next =
+            (struct n_pool_block *)((uint8_t *)block + pool->block_size);
         block = block->next;
     }
     block->next = NULL;
-
-    ES_OBLIGATION(
-        poolMem->signature = POOL_MEM_SIGNATURE);
-
-    return (ES_ERROR_NONE);
+    NOBLIGATION(pool->signature = POOL_MEM_SIGNATURE);
 }
 
-esError esPoolMemAllocI(
-    struct esPoolMem *  poolMem,
-    size_t              size,
-    void **             mem) {
 
-    ES_REQUIRE(ES_API_POINTER, poolMem != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  poolMem->signature == POOL_MEM_SIGNATURE);
-    ES_REQUIRE(ES_API_POINTER, mem != NULL);
 
-    if (size > poolMem->blockSize) {
+void * npool_alloc_i(
+    struct npool *              pool)
+{
+    NREQUIRE(NAPI_POINTER, pool != NULL);
+    NREQUIRE(NAPI_OBJECT,  pool->signature == POOL_MEM_SIGNATURE);
 
-        return (ES_ERROR_ARG_OUT_OF_RANGE);
-    } else if (poolMem->sentinel == NULL) {
+    if (pool->sentinel != NULL) {
+        struct n_pool_block *     block;
 
-        return (ES_ERROR_NO_MEMORY);
+        block          = pool->sentinel;
+        pool->sentinel = block->next;
+        pool->free    -= pool->block_size;
+
+        return ((void *)block);
     } else {
-        struct poolMemBlock * block;
-
-        block = poolMem->sentinel;
-        poolMem->sentinel = block->next;
-        poolMem->free -= poolMem->blockSize;
-        *mem = (void *)block;
-
-        return (ES_ERROR_NONE);
+        return (NULL);
     }
 }
 
-esError esPoolMemAlloc(
-    struct esPoolMem *  poolMem,
-    size_t              size,
-    void **             mem) {
 
-    esError             error;
-    esIntrCtx           intrCtx;
 
-    ES_CRITICAL_LOCK_ENTER(&intrCtx);
-    error = esPoolMemAllocI(
-        poolMem,
-        size,
-        mem);
-    ES_CRITICAL_LOCK_EXIT(intrCtx);
+void * npool_alloc(
+    struct npool *              pool)
+{
+    nsys_lock                   sys_lock;
+    void *                      mem;
 
-    return (error);
+    nsys_lock_enter(&sys_lock);
+    mem = npool_alloc_i(pool);
+    nsys_lock_exit(&sys_lock);
+
+    return (mem);
 }
 
-esError esPoolMemFreeI(
-    struct esPoolMem *  poolMem,
-    void *              mem) {
 
-    struct poolMemBlock * block;
 
-    ES_REQUIRE(ES_API_POINTER, poolMem != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  poolMem->signature == POOL_MEM_SIGNATURE);
-    ES_REQUIRE(ES_API_POINTER, mem != NULL);
+void npool_free_i(
+    struct npool *              pool,
+    void *                      mem)
+{
+    struct n_pool_block *         block;
 
-    block = (struct poolMemBlock *)mem;
-    block->next = poolMem->sentinel;
-    poolMem->sentinel = block;
-    poolMem->free += poolMem->blockSize;
+    NREQUIRE(NAPI_POINTER, pool != NULL);
+    NREQUIRE(NAPI_OBJECT,  pool->signature == POOL_MEM_SIGNATURE);
+    NREQUIRE(NAPI_POINTER, mem != NULL);
 
-    return (ES_ERROR_NONE);
+    block          = (struct n_pool_block *)mem;
+    block->next    = pool->sentinel;
+    pool->sentinel = block;
+    pool->free    += pool->block_size;
 }
 
-esError esPoolMemFree(
-    struct esPoolMem *  poolMem,
-    void *              mem) {
 
-    esError             error;
-    esIntrCtx           intrCtx;
 
-    ES_CRITICAL_LOCK_ENTER(&intrCtx);
-    error = esPoolMemFreeI(
-        poolMem,
-        mem);
-    ES_CRITICAL_LOCK_EXIT(intrCtx);
+void npool_free(
+    struct npool *              pool,
+    void *                      mem)
+{
+    nsys_lock                 sys_lock;
 
-    return (error);
+    nsys_lock_enter(&sys_lock);
+    npool_free_i(pool, mem);
+    nsys_lock_exit(&sys_lock);
 }
 
-esError esPoolMemGetFreeI(
-    struct esPoolMem *  poolMem,
-    size_t *            size) {
 
-    ES_REQUIRE(ES_API_POINTER, poolMem != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  poolMem->signature == POOL_MEM_SIGNATURE);
-    ES_REQUIRE(ES_API_POINTER, size != NULL);
 
-    *size = poolMem->free;
+size_t npool_unoccupied_i(
+    const struct npool *        pool)
+{
+    (void)pool;
 
-    return (ES_ERROR_NONE);
+    /*
+     * TODO: Implementation missing
+     */
+
+    return (0);
 }
 
-esError esPoolMemGetBlockSizeI(
-    struct esPoolMem *  poolMem,
-    size_t *            size) {
 
-    ES_REQUIRE(ES_API_POINTER, poolMem != NULL);
-    ES_REQUIRE(ES_API_OBJECT,  poolMem->signature == POOL_MEM_SIGNATURE);
-    ES_REQUIRE(ES_API_POINTER, size != NULL);
 
-    *size = poolMem->blockSize;
+size_t npool_unoccupied(
+    const struct npool *        pool)
+{
+    nsys_lock                   sys_lock;
+    size_t                      unoccupied;
 
-    return (ES_ERROR_NONE);
+    nsys_lock_enter(&sys_lock);
+    unoccupied = npool_unoccupied_i(pool);
+    nsys_lock_exit(&sys_lock);
+
+    return (unoccupied);
 }
 
-esError esPoolMemGetBlockSize(
-    struct esPoolMem *  poolMem,
-    size_t *            size) {
 
-    esError             error;
-    esLockCtx           lockCtx;
 
-    ES_CRITICAL_LOCK_ENTER(&lockCtx);
-    error = esPoolMemGetBlockSizeI(poolMem, size);
-    ES_CRITICAL_LOCK_EXIT(lockCtx);
+size_t npool_size_i(
+    const struct npool *        pool)
+{
+    (void)pool;
 
-    return (error);
+    /*
+     * TODO: Implementation missing
+     */
+
+    return (0);
+}
+
+
+
+size_t npool_size(
+    const struct npool *        pool)
+{
+    nsys_lock                   sys_lock;
+    size_t                      size;
+
+    nsys_lock_enter(&sys_lock);
+    size = npool_unoccupied_i(pool);
+    nsys_lock_exit(&sys_lock);
+
+    return (size);
 }
 
 /*================================*//** @cond *//*==  CONFIGURATION ERRORS  ==*/

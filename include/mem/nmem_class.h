@@ -21,7 +21,7 @@
  *//***********************************************************************//**
  * @file
  * @author  	Nenad Radulovic
- * @brief       Interface of mem_class.
+ * @brief       Interface of nmem_class.
  * @defgroup    def_group Group name
  * @brief       Group brief
  *********************************************************************//** @{ */
@@ -34,22 +34,12 @@
 #include <stddef.h>
 
 #include "plat/compiler.h"
-#include "base/error.h"
-#include "base/debug.h"
-#include "mem/heap.h"
-#include "mem/pool.h"
-#include "mem/static.h"
+#include "base/ndebug.h"
+#include "mem/nheap.h"
+#include "mem/npool.h"
+#include "mem/nstatic.h"
 
 /*===============================================================  MACRO's  ==*/
-
-#if (CONFIG_API_VALIDATION == 1)
-#define ES_MEM_INITIALIZER()                                                    \
-    {NULL, {{NULL, 0, 0, 0}}, 0}
-#else
-#define ES_MEM_INITIALIZER()                                                    \
-    {NULL, {{NULL, 0, 0}}}
-#endif
-
 /*------------------------------------------------------  C++ extern begin  --*/
 #ifdef __cplusplus
 extern "C" {
@@ -57,79 +47,81 @@ extern "C" {
 
 /*============================================================  DATA TYPES  ==*/
 
-struct esMem {
-    const PORT_C_ROM struct esMemClass * memClass;
-    union esMemHandle {
-        struct esHeapMem heapMem;
-        struct esPoolMem poolMem;
-        struct esStaticMem staticMem;
-    }                   handle;
-#if (CONFIG_API_VALIDATION == 1) || defined(__DOXYGEN__)
-    esAtomic            signature;
+struct nmem_class;
+
+struct nmem
+{
+    const PORT_C_ROM struct nmem_class * mem_class;
+    union nmem_handle
+    {
+        struct nheap                heap_mem;
+        struct npool                pool_mem;
+        struct nstatic              static_mem;
+    }                           handle;
+#if (CONFIG_DEBUG_API == 1) || defined(__DOXYGEN__)
+    ncpu_reg                    signature;
 #endif
 };
 
-typedef struct esMem esMem;
+typedef struct nmem nmem;
 
 /*======================================================  GLOBAL VARIABLES  ==*/
 
-extern const PORT_C_ROM struct esMemClass esGlobalHeapMemClass;
-extern const PORT_C_ROM struct esMemClass esGlobalPoolMemClass;
-extern const PORT_C_ROM struct esMemClass esGlobalStaticMemClass;
+extern const PORT_C_ROM struct nmem_class g_heap_mem_class;
+extern const PORT_C_ROM struct nmem_class g_pool_mem_class;
+extern const PORT_C_ROM struct nmem_class g_static_mem_class;
 
 /*===================================================  FUNCTION PROTOTYPES  ==*/
 
-esError esMemInit(
-    const PORT_C_ROM struct esMemClass * memClass,
-    struct esMem *      object,
-    void *              buffer,
-    size_t              size,
-    size_t              block);
 
-esError esMemTerm(
-    struct esMem *      object);
+void nmem_bind(
+    struct nmem *               object,
+    const PORT_C_ROM struct nmem_class * mem_class);
 
-esError esMemAllocI(
-    struct esMem *      object,
-    size_t              size,
-    void **             mem);
 
-esError esMemAlloc(
-    struct esMem *      object,
-    size_t              size,
-    void **             mem);
 
-esError esMemFreeI(
-    struct esMem *      object,
-    void *              mem);
+void * nmem_alloc_i(
+    struct nmem *               object,
+    size_t                      size);
 
-esError esMemFree(
-    struct esMem *      object,
-    void *              mem);
 
-esError esMemGetSizeI(
-    struct esMem *      object,
-    size_t *            size);
 
-esError esMemGetSize(
-    struct esMem *      object,
-    size_t *            size);
+void * nmem_alloc(
+    struct nmem *               object,
+    size_t                      size);
 
-esError esMemGetFreeI(
-    struct esMem *      object,
-    size_t *            free);
 
-esError esMemGetFree(
-    struct esMem *      object,
-    size_t *            free);
 
-esError esMemGetBlockSizeI(
-    struct esMem *      object,
-    size_t *            blockSize);
+void nmem_free_i(
+    struct nmem *               object,
+    void *                      mem);
 
-esError esMemGetBlockSize(
-    struct esMem *      object,
-    size_t *            blockSize);
+
+
+
+void nmem_free(
+    struct nmem *               object,
+    void *                      mem);
+
+
+
+size_t nget_mem_unoccupied_i(
+    struct nmem *               object);
+
+
+
+size_t nget_mem_unoccupied(
+    struct nmem *               object);
+
+
+
+size_t nget_mem_size_i(
+    struct nmem *               object);
+
+
+
+size_t nget_mem_size(
+    struct nmem *               object);
 
 /*--------------------------------------------------------  C++ extern end  --*/
 #ifdef __cplusplus
@@ -138,6 +130,6 @@ esError esMemGetBlockSize(
 
 /*================================*//** @cond *//*==  CONFIGURATION ERRORS  ==*/
 /** @endcond *//** @} *//******************************************************
- * END of mem_class.h
+ * END of nmem_class.h
  ******************************************************************************/
 #endif /* MEM_CLASS_H_ */
