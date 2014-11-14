@@ -37,7 +37,7 @@
 #include <stddef.h>
 
 #include "plat/compiler.h"
-#include "base/ndebug.h"
+#include "lib/debug.h"
 
 /*===============================================================  MACRO's  ==*/
 

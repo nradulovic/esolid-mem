@@ -31,8 +31,9 @@
 /*=========================================================  INCLUDE FILES  ==*/
 
 #include "plat/sys_lock.h"
-#include "base/nbitop.h"
-#include "mem/nstatic.h"
+#include "lib/module.h"
+#include "lib/bitop.h"
+#include "mem/static.h"
 
 /*=========================================================  LOCAL MACRO's  ==*/
 

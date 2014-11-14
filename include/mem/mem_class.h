@@ -34,10 +34,10 @@
 #include <stddef.h>
 
 #include "plat/compiler.h"
-#include "base/ndebug.h"
-#include "mem/nheap.h"
-#include "mem/npool.h"
-#include "mem/nstatic.h"
+#include "lib/debug.h"
+#include "mem/heap.h"
+#include "mem/pool.h"
+#include "mem/static.h"
 
 /*===============================================================  MACRO's  ==*/
 /*------------------------------------------------------  C++ extern begin  --*/

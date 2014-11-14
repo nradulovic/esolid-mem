@@ -28,7 +28,7 @@
 /*=========================================================  INCLUDE FILES  ==*/
 
 #include "plat/sys_lock.h"
-#include "mem/nmem_class.h"
+#include "mem/mem_class.h"
 
 /*=========================================================  LOCAL MACRO's  ==*/
 

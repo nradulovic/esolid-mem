@@ -37,8 +37,8 @@
 #include <stddef.h>
 
 #include "plat/compiler.h"
-#include "base/ndebug.h"
-#include "base/nbitop.h"
+#include "lib/debug.h"
+#include "lib/bitop.h"
 
 /*===============================================================  MACRO's  ==*/
 

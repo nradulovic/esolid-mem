@@ -31,10 +31,11 @@
 /*=========================================================  INCLUDE FILES  ==*/
 
 #include "plat/sys_lock.h"
-#include "base/nbitop.h"
-#include "base/ndebug.h"
-#include "arch/ncore.h"
-#include "mem/nheap.h"
+#include "lib/module.h"
+#include "lib/bitop.h"
+#include "lib/debug.h"
+#include "arch/cpu.h"
+#include "mem/heap.h"
 
 /*=========================================================  LOCAL MACRO's  ==*/
 
