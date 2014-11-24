@@ -34,7 +34,7 @@
 #include <stddef.h>
 
 #include "plat/compiler.h"
-#include "lib/debug.h"
+#include "shared/debug.h"
 #include "mem/heap.h"
 #include "mem/pool.h"
 #include "mem/static.h"

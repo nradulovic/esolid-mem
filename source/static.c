@@ -30,8 +30,9 @@
 
 /*=========================================================  INCLUDE FILES  ==*/
 
-#include "plat/sys_lock.h"
-#include "lib/module.h"
+#include "port/sys_lock.h"
+#include "port/cpu.h"
+#include "shared/component.h"
 #include "lib/bitop.h"
 #include "mem/static.h"
 
@@ -45,7 +46,7 @@
 /*=============================================  LOCAL FUNCTION PROTOTYPES  ==*/
 /*=======================================================  LOCAL VARIABLES  ==*/
 
-static const NMODULE_INFO_CREATE("Static Memory Management", "Nenad Radulovic");
+static const NCOMPONENT_DEFINE("Static Memory Management", "Nenad Radulovic");
 
 /*======================================================  GLOBAL VARIABLES  ==*/
 /*============================================  LOCAL FUNCTION DEFINITIONS  ==*/

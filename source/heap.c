@@ -30,11 +30,11 @@
 
 /*=========================================================  INCLUDE FILES  ==*/
 
-#include "plat/sys_lock.h"
-#include "lib/module.h"
+#include "port/sys_lock.h"
+#include "port/cpu.h"
+#include "shared/component.h"
+#include "shared/debug.h"
 #include "lib/bitop.h"
-#include "lib/debug.h"
-#include "arch/cpu.h"
 #include "mem/heap.h"
 
 /*=========================================================  LOCAL MACRO's  ==*/
@@ -64,7 +64,7 @@ struct PORT_C_ALIGN(NCPU_DATA_ALIGNMENT) n_heap_block
 /*=============================================  LOCAL FUNCTION PROTOTYPES  ==*/
 /*=======================================================  LOCAL VARIABLES  ==*/
 
-static const NMODULE_INFO_CREATE("Heap Memory Management", "Nenad Radulovic");
+static const NCOMPONENT_DEFINE("Heap Memory Management", "Nenad Radulovic");
 
 /*======================================================  GLOBAL VARIABLES  ==*/
 /*============================================  LOCAL FUNCTION DEFINITIONS  ==*/

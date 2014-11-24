@@ -36,8 +36,8 @@
 
 #include <stddef.h>
 
-#include "plat/compiler.h"
-#include "lib/debug.h"
+#include "port/compiler.h"
+#include "shared/debug.h"
 
 /*===============================================================  MACRO's  ==*/
 /*------------------------------------------------------  C++ extern begin  --*/

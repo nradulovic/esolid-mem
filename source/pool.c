@@ -30,8 +30,9 @@
 
 /*=========================================================  INCLUDE FILES  ==*/
 
-#include "plat/sys_lock.h"
-#include "lib/module.h"
+#include "port/sys_lock.h"
+#include "port/cpu.h"
+#include "shared/component.h"
 #include "lib/bitop.h"
 #include "mem/pool.h"
 
@@ -53,7 +54,7 @@ struct n_pool_block
 /*=============================================  LOCAL FUNCTION PROTOTYPES  ==*/
 /*=======================================================  LOCAL VARIABLES  ==*/
 
-static const NMODULE_INFO_CREATE("Pool Memory Module", "Nenad Radulovic");
+static const NCOMPONENT_DEFINE("Pool Memory Module", "Nenad Radulovic");
 
 /*======================================================  GLOBAL VARIABLES  ==*/
 /*============================================  LOCAL FUNCTION DEFINITIONS  ==*/
